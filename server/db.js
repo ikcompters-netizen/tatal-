@@ -1,113 +1,13 @@
-import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const dataDir = path.resolve(process.cwd(), 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const dataDir = isServerless ? '/tmp' : path.resolve(process.cwd(), 'data');
+const dbFile = path.join(dataDir, 'glowandgrow.json');
 
-const dbPath = path.join(dataDir, 'glowandgrow.db');
-export const db = new DatabaseSync(dbPath);
-
-export function initDatabase() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      slug TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      category TEXT NOT NULL,
-      concern TEXT NOT NULL,
-      price INTEGER NOT NULL,
-      compare_at_price INTEGER NOT NULL,
-      size TEXT NOT NULL DEFAULT '30 ML',
-      badge TEXT DEFAULT '',
-      is_bestseller INTEGER NOT NULL DEFAULT 0,
-      is_bundle INTEGER NOT NULL DEFAULT 0,
-      rating REAL NOT NULL DEFAULT 4.9,
-      reviews_count INTEGER NOT NULL DEFAULT 42,
-      image TEXT NOT NULL,
-      description TEXT NOT NULL,
-      ingredients TEXT NOT NULL,
-      how_to_use TEXT NOT NULL,
-      in_stock INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS coupons (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT UNIQUE NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('percent', 'fixed')),
-      value INTEGER NOT NULL,
-      min_order INTEGER NOT NULL DEFAULT 0,
-      max_uses INTEGER,
-      used_count INTEGER NOT NULL DEFAULT 0,
-      expires_at TEXT,
-      active INTEGER NOT NULL DEFAULT 1,
-      description TEXT DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS subscribers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      name TEXT DEFAULT '',
-      source TEXT DEFAULT 'website',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS admin_emails (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      role TEXT NOT NULL DEFAULT 'Admin',
-      added_by TEXT DEFAULT 'system',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_number TEXT UNIQUE NOT NULL,
-      customer_name TEXT NOT NULL,
-      customer_email TEXT NOT NULL,
-      customer_phone TEXT NOT NULL,
-      city TEXT NOT NULL,
-      address TEXT NOT NULL,
-      items_json TEXT NOT NULL,
-      subtotal INTEGER NOT NULL,
-      discount_amount INTEGER NOT NULL DEFAULT 0,
-      coupon_code TEXT DEFAULT '',
-      shipping_fee INTEGER NOT NULL DEFAULT 0,
-      total INTEGER NOT NULL,
-      payment_method TEXT NOT NULL DEFAULT 'COD',
-      order_note TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'Pending',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  seedDefaults();
-}
-
-function getSetting(key) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  return row ? JSON.parse(row.value) : null;
-}
-
-export function setSetting(key, value) {
-  db.prepare(`
-    INSERT INTO settings (key, value) VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).run(key, JSON.stringify(value));
-}
-
-function seedDefaults() {
-  if (!getSetting('homePage')) {
-    setSetting('homePage', {
+const DEFAULT_STORE = {
+  settings: {
+    homePage: {
       announcementText: 'Free Shipping on Orders Over PKR 4,000 • Use Code GLOW10 for 10% OFF',
       freeShippingThreshold: 4000,
       shippingFee: 250,
@@ -180,11 +80,8 @@ function seedDefaults() {
             'We offer a 7-day easy return policy on unopened products. Reach out anytime at g8537167@gmail.com or 03396199199 for personalized skincare guidance.',
         },
       ],
-    });
-  }
-
-  if (!getSetting('contact')) {
-    setSetting('contact', {
+    },
+    contact: {
       brandName: 'GlowandGrow',
       tagline: 'Skincare, Reimagined as Indulgence',
       email: 'g8537167@gmail.com',
@@ -194,12 +91,8 @@ function seedDefaults() {
       instagram: '@glowandgrow.pk',
       shippingPolicy: 'Free Shipping across Pakistan on orders over PKR 4,000. Standard delivery 2–4 working days.',
       returnPolicy: '7-Day Easy Returns & Exchanges',
-    });
-  }
-
-  const existingFb = getSetting('firebaseConfig');
-  if (!existingFb || !existingFb.apiKey) {
-    setSetting('firebaseConfig', {
+    },
+    firebaseConfig: {
       apiKey: 'AIzaSyAkihoICrF7KyF-D0cH8JmhGgoe1rs0yuY',
       authDomain: 'tatal-8a14e.firebaseapp.com',
       projectId: 'tatal-8a14e',
@@ -207,318 +100,437 @@ function seedDefaults() {
       messagingSenderId: '703077657524',
       appId: '1:703077657524:web:07ba36aade3a4b2292e0e1',
       measurementId: 'G-Z4YWK2JGDJ',
-    });
-  }
-
-  const productCount = db.prepare('SELECT COUNT(*) as count FROM products').get().count;
-  if (productCount === 0) {
-    const insertProduct = db.prepare(`
-      INSERT INTO products (
-        slug, name, category, concern, price, compare_at_price, size, badge,
-        is_bestseller, is_bundle, rating, reviews_count, image, description, ingredients, how_to_use
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const seedProducts = [
-      [
-        'day-night-combo-bundle',
-        'Day & Night Combo Bundle',
-        'Bundles',
-        'Brightening',
-        2999,
-        3598,
-        '2 x 30 ML',
-        '50% OFF',
-        1,
-        1,
-        4.9,
-        184,
-        '/images/combo-bundle.jpg',
+    },
+  },
+  products: [
+    {
+      id: 1,
+      slug: 'day-night-combo-bundle',
+      name: 'Day & Night Combo Bundle',
+      category: 'Bundles',
+      concern: 'Brightening',
+      price: 2999,
+      compare_at_price: 3598,
+      size: '2 x 30 ML',
+      badge: '50% OFF',
+      is_bestseller: 1,
+      is_bundle: 1,
+      rating: 4.9,
+      reviews_count: 184,
+      image: '/images/combo-bundle.jpg',
+      description:
         'Our signature AM/PM power duo combining the Brightening Vitamin C Serum for daytime radiance and Multi-Action Night Repair Serum for overnight cellular renewal.',
-        'Vitamin C (15%), Alpha Arbutin, Niacinamide, Hyaluronic Acid, Peptides, Licorice Root Extract.',
+      ingredients: 'Vitamin C (15%), Alpha Arbutin, Niacinamide, Hyaluronic Acid, Peptides, Licorice Root Extract.',
+      how_to_use:
         'Apply 3–4 drops of Brightening Serum every morning before sunscreen, and 3–4 drops of Night Repair Serum on clean skin before bed.',
-      ],
-      [
-        'brightening-face-serum',
-        'Brightening Face Serum',
-        'Face Care',
-        'Brightening',
-        1799,
-        3550,
-        '30 ML',
-        'BEST SELLER',
-        1,
-        0,
-        4.9,
-        312,
-        '/images/brightening-serum.jpg',
+      in_stock: 1,
+    },
+    {
+      id: 2,
+      slug: 'brightening-face-serum',
+      name: 'Brightening Face Serum',
+      category: 'Face Care',
+      concern: 'Brightening',
+      price: 1799,
+      compare_at_price: 3550,
+      size: '30 ML',
+      badge: 'BEST SELLER',
+      is_bestseller: 1,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 312,
+      image: '/images/brightening-serum.jpg',
+      description:
         'A radiance-boosting Vitamin C & Niacinamide concentrate formulated to fade dark spots, neutralize dullness, and leave skin visibly luminous.',
-        'L-Ascorbic Acid, Niacinamide 5%, Ferulic Acid, Hyaluronic Acid, Rosehip Extract.',
-        'Pat 3–4 drops onto damp face and neck every morning after cleansing. Follow with moisturizer and SPF.',
-      ],
-      [
-        'multi-action-night-repair-serum',
-        'Multi-Action Night Repair Face Serum',
-        'Face Care',
-        'Anti-Aging',
-        1799,
-        3550,
-        '30 ML',
-        'BEST SELLER',
-        1,
-        0,
-        4.9,
-        245,
-        '/images/night-repair-serum.jpg',
+      ingredients: 'L-Ascorbic Acid, Niacinamide 5%, Ferulic Acid, Hyaluronic Acid, Rosehip Extract.',
+      how_to_use: 'Pat 3–4 drops onto damp face and neck every morning after cleansing. Follow with moisturizer and SPF.',
+      in_stock: 1,
+    },
+    {
+      id: 3,
+      slug: 'multi-action-night-repair-serum',
+      name: 'Multi-Action Night Repair Face Serum',
+      category: 'Face Care',
+      concern: 'Anti-Aging',
+      price: 1799,
+      compare_at_price: 3550,
+      size: '30 ML',
+      badge: 'BEST SELLER',
+      is_bestseller: 1,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 245,
+      image: '/images/night-repair-serum.jpg',
+      description:
         'Deeply restorative overnight elixir with bio-peptides and gentle pro-retinol botanicals to smooth fine lines and wake up to plump, glass-like skin.',
-        'Collagen Peptides, Bakuchiol, Panthenol (B5), Squalane, Chamomile Distillate.',
-        'Smooth 3–4 drops onto cleansed skin every evening before your night cream.',
-      ],
-      [
-        'daily-skin-care-bundle',
-        'Daily Skin Care Bundle',
-        'Bundles',
-        'Glow',
-        4000,
-        8500,
-        '4-Piece Set',
-        'VALUE PACK',
-        1,
-        1,
-        5.0,
-        129,
-        '/images/combo-bundle.jpg',
+      ingredients: 'Collagen Peptides, Bakuchiol, Panthenol (B5), Squalane, Chamomile Distillate.',
+      how_to_use: 'Smooth 3–4 drops onto cleansed skin every evening before your night cream.',
+      in_stock: 1,
+    },
+    {
+      id: 4,
+      slug: 'daily-skin-care-bundle',
+      name: 'Daily Skin Care Bundle',
+      category: 'Bundles',
+      concern: 'Glow',
+      price: 4000,
+      compare_at_price: 8500,
+      size: '4-Piece Set',
+      badge: 'VALUE PACK',
+      is_bestseller: 1,
+      is_bundle: 1,
+      rating: 5.0,
+      reviews_count: 129,
+      image: '/images/combo-bundle.jpg',
+      description:
         'Everything your skin needs in one complete GlowandGrow ritual: Soothing Cleanser, pH 5.5 Toner, Brightening Serum, and Clear Skin Complexion Cream.',
-        'Niacinamide, Rice Ferment, Vitamin C, Centella Asiatica, Ceramides.',
-        'Cleanse, tone, treat with serum, and seal with complexion cream morning and night.',
-      ],
-      [
-        'rice-water-glow-serum',
-        'Rice Water Glow Serum',
-        'Face Care',
-        'Glow',
-        1899,
-        4000,
-        '30 ML',
-        'NEW',
-        1,
-        0,
-        4.8,
-        96,
-        '/images/brightening-serum.jpg',
+      ingredients: 'Niacinamide, Rice Ferment, Vitamin C, Centella Asiatica, Ceramides.',
+      how_to_use: 'Cleanse, tone, treat with serum, and seal with complexion cream morning and night.',
+      in_stock: 1,
+    },
+    {
+      id: 5,
+      slug: 'rice-water-glow-serum',
+      name: 'Rice Water Glow Serum',
+      category: 'Face Care',
+      concern: 'Glow',
+      price: 1899,
+      compare_at_price: 4000,
+      size: '30 ML',
+      badge: 'NEW',
+      is_bestseller: 1,
+      is_bundle: 0,
+      rating: 4.8,
+      reviews_count: 96,
+      image: '/images/brightening-serum.jpg',
+      description:
         'Silky fermented rice extract and niacinamide elixir inspired by timeless Asian beauty rituals for a translucent, glass-skin finish.',
-        'Oryza Sativa (Rice) Ferment Filtrate, Niacinamide 10%, Glycerin, Sodium Hyaluronate.',
-        'Apply morning and evening after toning for instant hydration and lasting luminosity.',
-      ],
-      [
-        'peach-sunrise-body-butter',
-        'Peach Sunrise Whipped Body Butter',
-        'Body Care',
-        'Hydration',
-        1475,
-        2950,
-        '135 GM',
-        '50% OFF',
-        1,
-        0,
-        4.9,
-        167,
-        '/images/body-butter.jpg',
+      ingredients: 'Oryza Sativa (Rice) Ferment Filtrate, Niacinamide 10%, Glycerin, Sodium Hyaluronate.',
+      how_to_use: 'Apply morning and evening after toning for instant hydration and lasting luminosity.',
+      in_stock: 1,
+    },
+    {
+      id: 6,
+      slug: 'peach-sunrise-body-butter',
+      name: 'Peach Sunrise Whipped Body Butter',
+      category: 'Body Care',
+      concern: 'Hydration',
+      price: 1475,
+      compare_at_price: 2950,
+      size: '135 GM',
+      badge: '50% OFF',
+      is_bestseller: 1,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 167,
+      image: '/images/body-butter.jpg',
+      description:
         'Gourmet whipped shea & peach kernel body butter that melts effortlessly on contact, locking in 24-hour velvety hydration with a warm fruity-floral scent.',
-        'Unrefined Shea Butter, Peach Kernel Oil, Vitamin E, Sweet Almond Oil, Jojoba Esters.',
-        'Massage generously onto damp skin after showering, focusing on elbows, knees, and dry patches.',
-      ],
-      [
-        'age-miracle-creme',
-        'Age Miracle Renewal Crème',
-        'Face Care',
-        'Anti-Aging',
-        1375,
-        2750,
-        '30 ML',
-        '50% OFF',
-        1,
-        0,
-        4.8,
-        88,
-        '/images/night-repair-serum.jpg',
+      ingredients: 'Unrefined Shea Butter, Peach Kernel Oil, Vitamin E, Sweet Almond Oil, Jojoba Esters.',
+      how_to_use: 'Massage generously onto damp skin after showering, focusing on elbows, knees, and dry patches.',
+      in_stock: 1,
+    },
+    {
+      id: 7,
+      slug: 'age-miracle-creme',
+      name: 'Age Miracle Renewal Crème',
+      category: 'Face Care',
+      concern: 'Anti-Aging',
+      price: 1375,
+      compare_at_price: 2750,
+      size: '30 ML',
+      badge: '50% OFF',
+      is_bestseller: 1,
+      is_bundle: 0,
+      rating: 4.8,
+      reviews_count: 88,
+      image: '/images/night-repair-serum.jpg',
+      description:
         'Velvety barrier-repairing moisturizer enriched with collagen peptides and ceramides to firm, plump, and protect mature or stressed skin.',
-        'Hydrolyzed Collagen, Ceramide NP, Shea Butter, Vitamin B5, Peptide Complex.',
-        'Warm a pea-sized amount between fingertips and press gently over face and neck.',
-      ],
-      [
-        'pores-refining-serum',
-        'Pores Refining Niacinamide Serum',
-        'Face Care',
-        'Acne Care',
-        1799,
-        3550,
-        '30 ML',
-        'TOP RATED',
-        1,
-        0,
-        4.9,
-        204,
-        '/images/cleanser-toner.jpg',
+      ingredients: 'Hydrolyzed Collagen, Ceramide NP, Shea Butter, Vitamin B5, Peptide Complex.',
+      how_to_use: 'Warm a pea-sized amount between fingertips and press gently over face and neck.',
+      in_stock: 1,
+    },
+    {
+      id: 8,
+      slug: 'pores-refining-serum',
+      name: 'Pores Refining Niacinamide Serum',
+      category: 'Face Care',
+      concern: 'Acne Care',
+      price: 1799,
+      compare_at_price: 3550,
+      size: '30 ML',
+      badge: 'TOP RATED',
+      is_bestseller: 1,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 204,
+      image: '/images/cleanser-toner.jpg',
+      description:
         'Targeted 10% Niacinamide + Zinc PCA formula that visibly minimizes enlarged pores, balances excess sebum, and refines uneven texture.',
-        'Niacinamide 10%, Zinc PCA 1%, Willow Bark Extract, Allantoin.',
-        'Apply 2–3 drops across T-zone and cheeks morning and night prior to moisturizer.',
-      ],
-      [
-        'acne-fighting-serum',
-        'Acne Fighting Clarifying Serum',
-        'Face Care',
-        'Acne Care',
-        1699,
-        3399,
-        '30 ML',
-        'DERM TESTED',
-        0,
-        0,
-        4.8,
-        142,
-        '/images/cleanser-toner.jpg',
+      ingredients: 'Niacinamide 10%, Zinc PCA 1%, Willow Bark Extract, Allantoin.',
+      how_to_use: 'Apply 2–3 drops across T-zone and cheeks morning and night prior to moisturizer.',
+      in_stock: 1,
+    },
+    {
+      id: 9,
+      slug: 'acne-fighting-serum',
+      name: 'Acne Fighting Clarifying Serum',
+      category: 'Face Care',
+      concern: 'Acne Care',
+      price: 1699,
+      compare_at_price: 3399,
+      size: '30 ML',
+      badge: 'DERM TESTED',
+      is_bestseller: 0,
+      is_bundle: 0,
+      rating: 4.8,
+      reviews_count: 142,
+      image: '/images/cleanser-toner.jpg',
+      description:
         'Calm breakouts without stripping your barrier. Powered by botanical salicylic acid and tea tree hydrosol for clearer, calmer skin.',
-        'Salicylic Acid 2%, Tea Tree Leaf Oil, Centella Asiatica, Green Tea Extract.',
-        'Apply a thin layer on clean skin in the evening or use as a targeted spot treatment.',
-      ],
-      [
-        'brightening-clay-mask',
-        'Brightening Clay Mask Vitamin-C',
-        'Face Care',
-        'Brightening',
-        1499,
-        2999,
-        '100 GM',
-        'SPA RITUAL',
-        0,
-        0,
-        4.9,
-        118,
-        '/images/clay-mask.jpg',
+      ingredients: 'Salicylic Acid 2%, Tea Tree Leaf Oil, Centella Asiatica, Green Tea Extract.',
+      how_to_use: 'Apply a thin layer on clean skin in the evening or use as a targeted spot treatment.',
+      in_stock: 1,
+    },
+    {
+      id: 10,
+      slug: 'brightening-clay-mask',
+      name: 'Brightening Clay Mask Vitamin-C',
+      category: 'Face Care',
+      concern: 'Brightening',
+      price: 1499,
+      compare_at_price: 2999,
+      size: '100 GM',
+      badge: 'SPA RITUAL',
+      is_bestseller: 0,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 118,
+      image: '/images/clay-mask.jpg',
+      description:
         'Whipped kaolin & turmeric-infused Vitamin C clay mask that detoxifies congested pores in 10 minutes while leaving skin noticeably brighter and softer.',
-        'French Pink & Kaolin Clay, Vitamin C, Licorice Extract, Aloe Vera Juice.',
-        'Apply an even layer to clean skin 2x weekly. Rinse with lukewarm water after 10–12 minutes.',
-      ],
-      [
-        'botanical-hair-strengthening-oil',
-        'Flora Botanical Hair Strengthening Oil',
-        'Hair Care',
-        'Hydration',
-        1599,
-        3200,
-        '100 ML',
-        'HERBAL',
-        0,
-        0,
-        4.9,
-        155,
-        '/images/hair-care.jpg',
+      ingredients: 'French Pink & Kaolin Clay, Vitamin C, Licorice Extract, Aloe Vera Juice.',
+      how_to_use: 'Apply an even layer to clean skin 2x weekly. Rinse with lukewarm water after 10–12 minutes.',
+      in_stock: 1,
+    },
+    {
+      id: 11,
+      slug: 'botanical-hair-strengthening-oil',
+      name: 'Flora Botanical Hair Strengthening Oil',
+      category: 'Hair Care',
+      concern: 'Hydration',
+      price: 1599,
+      compare_at_price: 3200,
+      size: '100 ML',
+      badge: 'HERBAL',
+      is_bestseller: 0,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 155,
+      image: '/images/hair-care.jpg',
+      description:
         'Cold-pressed rosemary, argan, and black seed botanical oil blend that nourishes the scalp, reduces hair fall, and restores mirror-like shine.',
-        'Rosemary Essential Oil, Moroccan Argan Oil, Black Seed Oil, Sweet Almond Oil, Vitamin E.',
-        'Massage into scalp and lengths 1–2 hours before washing, or leave overnight for deep conditioning.',
-      ],
-      [
-        'rose-berry-lip-cheek-tint',
-        'Velvet Rose Lip & Cheek Tint',
-        'Makeup',
-        'Glow',
-        1199,
-        2399,
-        '15 ML',
-        'BEST SELLER',
-        0,
-        0,
-        4.9,
-        221,
-        '/images/lip-tint.jpg',
+      ingredients: 'Rosemary Essential Oil, Moroccan Argan Oil, Black Seed Oil, Sweet Almond Oil, Vitamin E.',
+      how_to_use: 'Massage into scalp and lengths 1–2 hours before washing, or leave overnight for deep conditioning.',
+      in_stock: 1,
+    },
+    {
+      id: 12,
+      slug: 'rose-berry-lip-cheek-tint',
+      name: 'Velvet Rose Lip & Cheek Tint',
+      category: 'Makeup',
+      concern: 'Glow',
+      price: 1199,
+      compare_at_price: 2399,
+      size: '15 ML',
+      badge: 'BEST SELLER',
+      is_bestseller: 0,
+      is_bundle: 0,
+      rating: 4.9,
+      reviews_count: 221,
+      image: '/images/lip-tint.jpg',
+      description:
         'Buildable, long-wearing botanical blush and lip stain with hyaluronic acid for a natural flushed glow that never feels dry or patchy.',
-        'Hyaluronic Acid, Rosewater, Jojoba Oil, Mineral Pigments, Vitamin E.',
-        'Dot onto apples of cheeks and lips, then blend immediately with fingertips or brush.',
-      ],
-      [
-        'everyday-cleanser-toner-duo',
-        'Soothing Cleanser & pH 5.5 Toner Duo',
-        'Face Care',
-        'Hydration',
-        2150,
-        4300,
-        '2 x 120 ML',
-        '50% OFF',
-        0,
-        1,
-        4.8,
-        74,
-        '/images/cleanser-toner.jpg',
+      ingredients: 'Hyaluronic Acid, Rosewater, Jojoba Oil, Mineral Pigments, Vitamin E.',
+      how_to_use: 'Dot onto apples of cheeks and lips, then blend immediately with fingertips or brush.',
+      in_stock: 1,
+    },
+    {
+      id: 13,
+      slug: 'everyday-cleanser-toner-duo',
+      name: 'Soothing Cleanser & pH 5.5 Toner Duo',
+      category: 'Face Care',
+      concern: 'Hydration',
+      price: 2150,
+      compare_at_price: 4300,
+      size: '2 x 120 ML',
+      badge: '50% OFF',
+      is_bestseller: 0,
+      is_bundle: 1,
+      rating: 4.8,
+      reviews_count: 74,
+      image: '/images/cleanser-toner.jpg',
+      description:
         'Sulfate-free amino acid daily cleanser paired with our balancing pH 5.5 rose & green tea mist toner to prep skin for maximum serum absorption.',
-        'Green Tea Extract, Lemon Hydrosol, Rose Water, Glycerin, Panthenol.',
-        'Wash face gently with cleanser, pat dry, and mist toner over face before applying serums.',
-      ],
-      [
-        'skin-protection-hydration-pack',
-        'Skin Protection & Hydration Pack',
-        'Bundles',
-        'Hydration',
-        2700,
-        6050,
-        '3-Piece Set',
-        'SAVE 55%',
-        0,
-        1,
-        4.9,
-        93,
-        '/images/combo-bundle.jpg',
+      ingredients: 'Green Tea Extract, Lemon Hydrosol, Rose Water, Glycerin, Panthenol.',
+      how_to_use: 'Wash face gently with cleanser, pat dry, and mist toner over face before applying serums.',
+      in_stock: 1,
+    },
+    {
+      id: 14,
+      slug: 'skin-protection-hydration-pack',
+      name: 'Skin Protection & Hydration Pack',
+      category: 'Bundles',
+      concern: 'Hydration',
+      price: 2700,
+      compare_at_price: 6050,
+      size: '3-Piece Set',
+      badge: 'SAVE 55%',
+      is_bestseller: 0,
+      is_bundle: 1,
+      rating: 4.9,
+      reviews_count: 93,
+      image: '/images/combo-bundle.jpg',
+      description:
         'Complete barrier-care bundle combining our Vitamin C Glow Serum, Everyday Soothing Cleanser, and SPF Defense Cream for effortless daily protection.',
-        'Vitamin C, Ceramides, Hyaluronic Acid, Zinc Oxide, Green Tea.',
-        'Use morning and evening as your core cleanse-treat-protect routine.',
-      ],
-    ];
+      ingredients: 'Vitamin C, Ceramides, Hyaluronic Acid, Zinc Oxide, Green Tea.',
+      how_to_use: 'Use morning and evening as your core cleanse-treat-protect routine.',
+      in_stock: 1,
+    },
+  ],
+  coupons: [
+    {
+      id: 1,
+      code: 'GLOW10',
+      type: 'percent',
+      value: 10,
+      min_order: 1500,
+      max_uses: 500,
+      used_count: 0,
+      expires_at: '2027-12-31',
+      active: 1,
+      description: '10% off orders above Rs. 1,500',
+    },
+    {
+      id: 2,
+      code: 'WELCOME500',
+      type: 'fixed',
+      value: 500,
+      min_order: 3000,
+      max_uses: 200,
+      used_count: 0,
+      expires_at: '2027-12-31',
+      active: 1,
+      description: 'Flat Rs. 500 off orders above Rs. 3,000',
+    },
+    {
+      id: 3,
+      code: 'GLOW20',
+      type: 'percent',
+      value: 20,
+      min_order: 5000,
+      max_uses: 100,
+      used_count: 0,
+      expires_at: '2027-12-31',
+      active: 1,
+      description: '20% VIP discount on orders above Rs. 5,000',
+    },
+  ],
+  subscribers: [
+    {
+      id: 1,
+      email: 'g8537167@gmail.com',
+      name: 'GlowandGrow Owner',
+      source: 'admin',
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      email: 'ayesha.khan@example.com',
+      name: 'Ayesha Khan',
+      source: 'footer',
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 3,
+      email: 'hira.malik@example.com',
+      name: 'Hira Malik',
+      source: 'checkout',
+      created_at: new Date().toISOString(),
+    },
+  ],
+  admin_emails: [
+    {
+      id: 1,
+      email: 'g8537167@gmail.com',
+      role: 'Owner',
+      added_by: 'system',
+      created_at: new Date().toISOString(),
+    },
+  ],
+  orders: [],
+  nextId: {
+    products: 15,
+    coupons: 4,
+    subscribers: 4,
+    admin_emails: 2,
+    orders: 1,
+  },
+};
 
-    for (const p of seedProducts) {
-      insertProduct.run(...p);
+let memoryStore = null;
+
+function cloneDefaults() {
+  return JSON.parse(JSON.stringify(DEFAULT_STORE));
+}
+
+export function getStore() {
+  if (memoryStore) return memoryStore;
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
+    if (fs.existsSync(dbFile)) {
+      const raw = fs.readFileSync(dbFile, 'utf8');
+      memoryStore = JSON.parse(raw);
+      return memoryStore;
+    }
+  } catch {
+    // Fallback to memory store
   }
+  memoryStore = cloneDefaults();
+  saveStore();
+  return memoryStore;
+}
 
-  const couponCount = db.prepare('SELECT COUNT(*) as count FROM coupons').get().count;
-  if (couponCount === 0) {
-    const insertCoupon = db.prepare(`
-      INSERT INTO coupons (code, type, value, min_order, max_uses, expires_at, active, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    insertCoupon.run('GLOW10', 'percent', 10, 1500, 500, '2027-12-31', 1, '10% off orders above Rs. 1,500');
-    insertCoupon.run('WELCOME500', 'fixed', 500, 3000, 200, '2027-12-31', 1, 'Flat Rs. 500 off orders above Rs. 3,000');
-    insertCoupon.run('GLOW20', 'percent', 20, 5000, 100, '2027-12-31', 1, '20% VIP discount on orders above Rs. 5,000');
-  }
-
-  const subCount = db.prepare('SELECT COUNT(*) as count FROM subscribers').get().count;
-  if (subCount === 0) {
-    const insertSub = db.prepare('INSERT INTO subscribers (email, name, source) VALUES (?, ?, ?)');
-    insertSub.run('g8537167@gmail.com', 'GlowandGrow Owner', 'admin');
-    insertSub.run('ayesha.khan@example.com', 'Ayesha Khan', 'footer');
-    insertSub.run('hira.malik@example.com', 'Hira Malik', 'checkout');
-  }
-
-  const adminCount = db.prepare('SELECT COUNT(*) as count FROM admin_emails').get().count;
-  if (adminCount === 0) {
-    const insertAdmin = db.prepare('INSERT INTO admin_emails (email, role, added_by) VALUES (?, ?, ?)');
-    insertAdmin.run('g8537167@gmail.com', 'Owner', 'system');
+export function saveStore() {
+  if (!memoryStore) return;
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    fs.writeFileSync(dbFile, JSON.stringify(memoryStore, null, 2));
+  } catch {
+    // Ignore read-only FS errors in serverless environments
   }
 }
 
 export function getBootstrapData() {
-  const homePage = getSetting('homePage');
-  const contact = getSetting('contact');
-  const firebaseConfig = getSetting('firebaseConfig');
-  const products = db.prepare('SELECT * FROM products ORDER BY is_bestseller DESC, id ASC').all();
-  const activeCoupons = db
-    .prepare('SELECT code, type, value, min_order, description FROM coupons WHERE active = 1 ORDER BY id ASC')
-    .all();
-
+  const store = getStore();
   return {
-    homePage,
-    contact,
-    firebaseConfig,
-    products,
-    activeCoupons,
+    homePage: store.settings.homePage,
+    contact: store.settings.contact,
+    firebaseConfig: store.settings.firebaseConfig,
+    products: [...store.products].sort((a, b) => b.is_bestseller - a.is_bestseller || a.id - b.id),
+    activeCoupons: store.coupons
+      .filter((c) => c.active === 1)
+      .map(({ code, type, value, min_order, description }) => ({
+        code,
+        type,
+        value,
+        min_order,
+        description,
+      })),
   };
 }
