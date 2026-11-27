@@ -16,7 +16,6 @@ import {
   SlidersHorizontal,
   X,
   Check,
-  MessageCircle,
 } from 'lucide-react';
 import { api, type BootstrapResponse } from './lib/api';
 import {
@@ -31,6 +30,7 @@ import { AuthDrawer } from './components/AuthDrawer';
 import { CartDrawer } from './components/CartDrawer';
 import { ProductModal } from './components/ProductModal';
 import { AdminPanel } from './components/AdminPanel';
+import { BrandLogo } from './components/BrandLogo';
 
 const REVIEWS = [
   {
@@ -141,6 +141,12 @@ export function App() {
   useEffect(() => {
     loadStore();
   }, []);
+
+  useEffect(() => {
+    if (data?.contact?.brandName) {
+      document.title = `${data.contact.brandName} — Luxury Skincare & Cosmetics`;
+    }
+  }, [data?.contact?.brandName]);
 
   useEffect(() => {
     if (!firebaseConnected) return;
@@ -389,15 +395,8 @@ export function App() {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-[#E5DDD0] bg-[#FAF7F2]/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <a href="#" className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#8E4A34] font-serif-editorial text-xl font-bold text-white">
-              G
-            </span>
-            <div>
-              <span className="font-serif-editorial text-2xl font-bold tracking-tight text-[#1F1815]">
-                {contact.brandName}
-              </span>
-            </div>
+          <a href="#" className="flex items-center">
+            <BrandLogo brandName={contact.brandName} subtitle="Botanical Luxury" />
           </a>
 
           <nav className="hidden items-center gap-6 text-xs font-semibold uppercase tracking-wider text-[#4F433B] lg:flex">
@@ -452,20 +451,22 @@ export function App() {
 
             <button
               onClick={() => setAuthOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD3C4] bg-white px-3 py-1.5 text-xs font-semibold text-[#1F1815] transition hover:border-[#8E4A34]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#DDD3C4] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#1F1815] transition hover:border-[#8E4A34]"
             >
               <User className="h-4 w-4 text-[#8E4A34]" />
               <span className="hidden sm:inline">{user ? user.displayName : 'Login'}</span>
             </button>
 
-            <button
-              onClick={openAdminView}
-              className="inline-flex items-center gap-1 rounded-full bg-[#F3ECE1] px-3 py-1.5 text-xs font-semibold text-[#8E4A34] transition hover:bg-[#E7DAC7]"
-              title="Open Admin Panel"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Admin</span>
-            </button>
+            {user?.isAdmin && (
+              <button
+                onClick={openAdminView}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#8E4A34] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#753B28]"
+                title="Open Admin Panel"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span>Admin Panel</span>
+              </button>
+            )}
 
             <button
               onClick={() => setCartOpen(true)}
@@ -906,9 +907,9 @@ export function App() {
       <footer className="bg-[#1F1815] px-4 py-14 text-[#FAF7F2] sm:px-6">
         <div className="mx-auto grid max-w-7xl gap-10 md:grid-cols-4">
           <div>
-            <h3 className="font-serif-editorial text-3xl font-bold">{contact.brandName}</h3>
-            <p className="mt-2 text-xs leading-relaxed text-[#CBBBA6]">{contact.tagline}</p>
-            <p className="mt-4 text-xs text-[#CBBBA6]">{contact.shippingPolicy}</p>
+            <BrandLogo brandName={contact.brandName} dark subtitle="Botanical Luxury" />
+            <p className="mt-3 text-xs leading-relaxed text-[#CBBBA6]">{contact.tagline}</p>
+            <p className="mt-3 text-xs text-[#CBBBA6]">{contact.shippingPolicy}</p>
           </div>
 
           <div>
@@ -955,16 +956,13 @@ export function App() {
           </div>
 
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-widest text-[#D89B7E]">Store Management</h4>
-            <p className="mt-3 text-xs text-[#CBBBA6]">
-              Manage homepage content, contact details, coupons, products, and Firebase login.
-            </p>
-            <button
-              onClick={openAdminView}
-              className="mt-4 rounded-full border border-[#D89B7E] px-5 py-2 text-xs font-semibold text-[#FAF7F2] transition hover:bg-[#8E4A34] hover:border-[#8E4A34]"
-            >
-              Open Admin Panel
-            </button>
+            <h4 className="text-xs font-bold uppercase tracking-widest text-[#D89B7E]">Customer Care</h4>
+            <ul className="mt-3 space-y-2 text-xs text-[#CBBBA6]">
+              <li>Dermatologist Tested Formulas</li>
+              <li>100% Cruelty-Free & Ethical</li>
+              <li>{contact.returnPolicy}</li>
+              <li>Cash on Delivery Nationwide</li>
+            </ul>
           </div>
         </div>
 
@@ -981,10 +979,18 @@ export function App() {
         href={`https://wa.me/92${contact.whatsapp.replace(/^0/, '').replace(/[^0-9]/g, '')}`}
         target="_blank"
         rel="noreferrer"
-        className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-xs font-semibold text-white shadow-xl transition hover:bg-emerald-700"
+        aria-label={`Chat on WhatsApp ${contact.phone}`}
+        className="group fixed bottom-5 right-5 z-30 flex items-center gap-2.5 rounded-full bg-[#25D366] p-3.5 text-white shadow-xl transition-all duration-200 hover:scale-105 hover:bg-[#20BD5A] sm:px-4 sm:py-3"
       >
-        <MessageCircle className="h-4 w-4" />
-        <span className="hidden sm:inline">WhatsApp {contact.phone}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 32 32"
+          className="h-6 w-6 fill-current"
+          aria-hidden="true"
+        >
+          <path d="M16.004 2.667C8.64 2.667 2.667 8.64 2.667 16c0 2.353.615 4.651 1.784 6.676L2.667 29.333l6.835-1.751A13.28 13.28 0 0 0 16.004 29.333c7.363 0 13.33-5.972 13.33-13.333 0-7.362-5.967-13.333-13.33-13.333Zm7.775 18.818c-.325.915-1.899 1.75-2.62 1.845-.664.088-1.504.125-2.429-.168-.561-.178-1.281-.416-2.199-.814-3.868-1.671-6.392-5.576-6.585-5.833-.192-.257-1.572-2.092-1.572-3.99 0-1.898.994-2.831 1.347-3.217.353-.385.77-.482 1.027-.482.257 0 .513.002.738.014.236.012.553-.09.865.661.321.771 1.091 2.669 1.187 2.862.096.193.16.418.032.675-.128.257-.193.418-.385.643-.193.225-.405.502-.578.674-.193.193-.394.402-.169.788.225.385 1.001 1.653 2.15 2.677 1.477 1.317 2.723 1.725 3.108 1.918.385.193.61.161.835-.096.225-.257.963-1.124 1.22-1.51.257-.385.513-.321.866-.193.353.129 2.248 1.06 2.633 1.253.385.193.642.289.738.45.096.16.096.93-.229 1.845Z" />
+        </svg>
+        <span className="hidden text-xs font-semibold tracking-wide sm:inline">WhatsApp</span>
       </a>
 
       {/* Modals & Drawers */}
