@@ -8,12 +8,12 @@ interface BrandLogoProps {
 
 export const BrandLogo: React.FC<BrandLogoProps> = ({ brandName, dark = false, subtitle }) => {
   return (
-    <div className="inline-flex items-center gap-2.5">
+    <div className="inline-flex min-w-0 items-center gap-2 sm:gap-2.5">
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 64 64"
         fill="none"
-        className="h-9 w-9 shrink-0"
+        className="h-8 w-8 shrink-0 sm:h-9 sm:w-9"
         aria-hidden="true"
       >
         <rect
@@ -45,9 +45,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ brandName, dark = false, s
         <circle cx="32" cy="51.5" r="2" fill="#D89B7E" />
       </svg>
 
-      <div className="leading-none">
+      <div className="min-w-0 leading-none">
         <span
-          className={`font-serif-editorial text-2xl font-bold tracking-tight ${
+          className={`block truncate font-serif-editorial text-xl font-bold tracking-tight sm:text-2xl ${
             dark ? 'text-[#FAF7F2]' : 'text-[#1F1815]'
           }`}
         >
@@ -55,7 +55,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ brandName, dark = false, s
         </span>
         {subtitle && (
           <p
-            className={`mt-0.5 text-[9px] font-semibold uppercase tracking-[0.22em] ${
+            className={`mt-0.5 hidden truncate text-[9px] font-semibold uppercase tracking-[0.2em] sm:block ${
               dark ? 'text-[#D89B7E]' : 'text-[#8E4A34]'
             }`}
           >
